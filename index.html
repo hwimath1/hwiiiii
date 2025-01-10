@@ -1,0 +1,593 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>삼각형, 사각형의 넓이</title>
+  <!-- MathJax for LaTeX rendering -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"
+    defer
+  ></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: sans-serif;
+      background: #f5f5f5;
+    }
+    #container {
+      width: 80%;
+      max-width: 700px;
+      margin: 20px auto;
+      background: #fff;
+      padding: 20px;
+      border-radius: 10px;
+    }
+    h1, h2, h3 {
+      text-align: center;
+    }
+    .centered {
+      text-align: center;
+    }
+    .difficulty-btns button {
+      margin: 5px;
+      padding: 10px 15px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .hidden {
+      display: none;
+    }
+    #question-container {
+      margin-top: 30px;
+    }
+    .answer-choice {
+      margin-bottom: 10px;
+      cursor: pointer;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      padding: 8px;
+      transition: background 0.3s;
+    }
+    .answer-choice:hover {
+      background: #ececec;
+    }
+    #score-container, #life-container, #time-container {
+      margin: 10px 0;
+      text-align: center;
+      font-weight: bold;
+    }
+    #energy-bar {
+      width: 100%;
+      height: 20px;
+      background: linear-gradient(to right, #4caf50 100%, transparent 0%);
+      border-radius: 5px;
+      margin-bottom: 10px;
+      transition: width 0.5s ease-out;
+    }
+    #sendButton {
+      margin-top: 20px;
+      padding: 10px 20px;
+      cursor: pointer;
+    }
+    #response {
+      margin-top: 15px;
+      white-space: pre-wrap;
+      font-size: 0.9em;
+      color: #444;
+    }
+  </style>
+</head>
+<body>
+<div id="container">
+
+  <!-- 첫 화면: 이름 입력, 난이도 선택 -->
+  <div id="start-screen">
+    <h1>삼각형, 사각형의 넓이</h1>
+    <div style="text-align:center;">
+      <input type="text" id="playerName" placeholder="이름을 입력하세요" style="padding:5px; width:200px;" />
+    </div>
+    <h3>난이도를 선택하세요</h3>
+    <div class="difficulty-btns centered">
+      <button onclick="startGame('최상')">최상 (20점, 25초)</button>
+      <button onclick="startGame('상')">상 (15점, 35초)</button>
+      <button onclick="startGame('중')">중 (13점, 45초)</button>
+      <button onclick="startGame('하')">하 (10점, 시간제한없음)</button>
+    </div>
+  </div>
+
+  <!-- 퀴즈 화면 -->
+  <div id="quiz-screen" class="hidden">
+    <div id="score-container"></div>
+    <div id="life-container"></div>
+    <div id="time-container"></div>
+    <div id="energy-bar"></div>
+    <div id="question-container"></div>
+    <div class="centered">
+      <button id="sendButton" onclick="onSendScore()">점수 전송</button>
+      <div id="response"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// --------------------------------------------------------------------------------------
+// 서버에 점수 전송 (요청)
+// --------------------------------------------------------------------------------------
+function saveData(game, name, score, elapsedTime) {
+    const FUNCTION_URL = "https://us-central1-record-f420d.cloudfunctions.net/report";
+
+    const requestData = {
+        game,
+        name,
+        score: parseInt(score, 10),
+        elapsedTime: parseInt(elapsedTime, 10)
+    };
+
+    fetch(FUNCTION_URL, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(requestData)
+    })
+    .then(async (response) => {
+        const responseData = await response.json();
+        if (response.ok) {
+            document.getElementById('response').innerText =
+                `성공: ${JSON.stringify(responseData, null, 2)}`;
+        } else {
+            document.getElementById('response').innerText =
+                `오류: ${JSON.stringify(responseData, null, 2)}`;
+        }
+    })
+    .catch(error => {
+        console.error('요청 실패:', error);
+        document.getElementById('response').innerText =
+            `네트워크 오류: ${error.message}`;
+    });
+}
+
+// --------------------------------------------------------------------------------------
+// 문제 목록 (총 37문제). 각 문제는 {question, choices[], correctIndex}
+// 문제 순서는 코드에서 셔플로 바꿀 예정입니다.
+// "문제"라고 표기하지 않고, 조건+질문 그대로 유지.
+// --------------------------------------------------------------------------------------
+// 주의: 본문에서 <=, >=는 \(\le\), \(\ge\) 로 적절히 수정하라는 지시가 없었거나 
+//       해당 문제에 부등호가 없으므로 그대로 둡니다 (문제들에 구체적 '부등호' 표기는 없음).
+//       이미 있는 '>'와 '<' 기호는 각 문제 조건 그대로 유지합니다.
+
+const allQuestions = [
+  {
+    // #1
+    question: "\\(a = 3\\sqrt{2},\\; c = 4,\\; S = 6\\)인 삼각형 \\(ABC\\)에서 \\(90^{\\circ} < B < 180^{\\circ}\\)일 때, \\(\\angle B\\)의 값은?",
+    choices: ["\\(120^{\\circ}\\)", "\\(135^{\\circ}\\)", "\\(150^{\\circ}\\)", "\\(160^{\\circ}\\)"],
+    correctIndex: 1  // "135°"
+  },
+  {
+    // #2
+    question: "\\(a = 2\\sqrt{3},\\; b = 2,\\; S = 3\\)인 삼각형 \\(ABC\\)에서 \\(0^{\\circ} < C < 90^{\\circ}\\)일 때, \\(\\angle C\\)의 값은?",
+    choices: ["\\(45^{\\circ}\\)", "\\(60^{\\circ}\\)", "\\(70^{\\circ}\\)", "\\(75^{\\circ}\\)"],
+    correctIndex: 1  // "60°"
+  },
+  {
+    // #3
+    question: "\\(a = \\sqrt{6},\\; B = 150^{\\circ},\\; S = \\sqrt{3}\\)인 삼각형 \\(ABC\\)에서 \\(c\\)의 길이는?",
+    choices: ["\\(2\\)", "\\(2\\sqrt{2}\\)", "\\(\\sqrt{6}\\)", "\\(2\\sqrt{3}\\)"],
+    correctIndex: 1  // "2√2"
+  },
+  {
+    // #4
+    question: "\\(c = 2\\sqrt{3},\\; B = 60^{\\circ},\\; S = 6\\)인 삼각형 \\(ABC\\)에서 \\(a\\)의 길이는?",
+    choices: ["\\(2\\)", "\\(3\\)", "\\(4\\)", "\\(2\\sqrt{3}\\)"],
+    correctIndex: 2  // "4"
+  },
+  {
+    // #5
+    question: "\\(a = \\sqrt{2},\\; c = \\sqrt{6},\\; B = 60^{\\circ}\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(\\dfrac{3}{2}\\)", "2", "\\(\\dfrac{5}{2}\\)", "\\(\\sqrt{3}\\)"],
+    correctIndex: 0  // "3/2"
+  },
+  {
+    // #6
+    question: "\\(a = 8,\\; b = 8,\\; C = 120^{\\circ}\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(8\\sqrt{3}\\)", "\\(12\\sqrt{3}\\)", "\\(16\\sqrt{3}\\)", "24"],
+    correctIndex: 2  // "16√3"
+  },
+  {
+    // #7
+    question: "\\(a = \\sqrt{3},\\; c = 2\\sqrt{2},\\; B = 120^{\\circ}\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(\\sqrt{2}\\)", "\\(\\dfrac{3\\sqrt{2}}{2}\\)", "2", "\\(3\\sqrt{2}\\)"],
+    correctIndex: 1  // "3√2 / 2"
+  },
+  {
+    // #8
+    question: "\\(b = 8,\\; c = 9,\\; A = 135^{\\circ}\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(9\\sqrt{2}\\)", "18", "\\(\\dfrac{9\\sqrt{2}}{2}\\)", "\\(18\\sqrt{2}\\)"],
+    correctIndex: 3  // "18√2"
+  },
+  {
+    // #9
+    question: "\\(a = 8,\\; b = 12,\\; C = 30^{\\circ}\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["12", "\\(\\dfrac{24}{\\sqrt{2}}\\)", "16", "24"],
+    correctIndex: 3  // "24"
+  },
+  {
+    // #10
+    question: "\\(r = 3,\\; S = 12\\sqrt{2}\\)인 삼각형의 둘레는 얼마인가?",
+    choices: ["\\(6\\sqrt{2}\\)", "\\(7\\sqrt{2}\\)", "\\(8\\sqrt{2}\\)", "\\(9\\sqrt{2}\\)"],
+    correctIndex: 2  // "8√2"
+  },
+  {
+    // #11
+    question: "\\(r = 5,\\; S = 10\\)인 삼각형의 둘레는 얼마인가?",
+    choices: ["3", "4", "5", "6"],
+    correctIndex: 1  // "4"
+  },
+  {
+    // #12
+    question: "\\(r = 4,\\; S = 20\\)인 삼각형의 둘레는 얼마인가?",
+    choices: ["5", "8", "10", "12"],
+    correctIndex: 2  // "10"
+  },
+  {
+    // #13
+    question: "\\(a = 8,\\; b = 9,\\; c = 7\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(10\\sqrt{5}\\)", "24", "\\(12\\sqrt{5}\\)", "\\(12\\sqrt{3}\\)"],
+    correctIndex: 2  // "12√5"
+  },
+  {
+    // #14
+    question: "\\(a = 3,\\; b = 3,\\; c = 2\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(2\\sqrt{2}\\)", "\\(3\\sqrt{2}\\)", "\\(2\\sqrt{3}\\)", "\\(\\sqrt{6}\\)"],
+    correctIndex: 0  // "2√2"
+  },
+  {
+    // #15
+    question: "\\(a = 7,\\; b = 3,\\; c = 6\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(4\\sqrt{5}\\)", "\\(2\\sqrt{15}\\)", "\\(4\\sqrt{3}\\)", "\\(8\\sqrt{5}\\)"],
+    correctIndex: 0  // "4√5"
+  },
+  {
+    // #16
+    question: "\\(a = 6,\\; b = 3,\\; c = 5\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["6", "\\(\\sqrt{30}\\)", "\\(2\\sqrt{14}\\)", "8"],
+    correctIndex: 2  // "2√14"
+  },
+  {
+    // #17
+    question: "\\(a = 3,\\; b = 4,\\; c = 5\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["4", "5", "6", "10"],
+    correctIndex: 2  // "6"
+  },
+  {
+    // #18
+    question: "\\(a=5,\\; b=7,\\; c=8\\)인 삼각형 \\(ABC\\)의 외접원의 반지름 \\(R\\)은 얼마인가?",
+    choices: ["2", "4", "\\(\\dfrac{7\\sqrt{3}}{3}\\)", "\\(3\\sqrt{3}\\)"],
+    correctIndex: 2  // "7√3/3"
+  },
+  {
+    // #19
+    question: "\\(a=5,\\; b=4,\\; c=3\\)인 삼각형 \\(ABC\\)의 외접원의 반지름 \\(R\\)은 얼마인가?",
+    choices: ["2", "\\(\\dfrac{5}{2}\\)", "3", "4"],
+    correctIndex: 1  // "5/2"
+  },
+  {
+    // #20
+    question: "\\(a=5,\\; b=6,\\; c=9\\)인 삼각형 \\(ABC\\)의 외접원의 반지름 \\(R\\)은 얼마인가?",
+    choices: ["\\(\\dfrac{27\\sqrt{2}}{8}\\)", "\\(\\dfrac{9\\sqrt{2}}{4}\\)", "\\(\\dfrac{15\\sqrt{2}}{8}\\)", "\\(\\dfrac{27}{4}\\)"],
+    correctIndex: 0  // "27√2/8"
+  },
+  {
+    // #21
+    question: "\\(b=2,\\; c=2\\sqrt{2},\\; A=45^{\\circ}\\)인 삼각형 \\(ABC\\)의 외접원의 반지름 \\(R\\)은 얼마인가?",
+    choices: ["\\(\\sqrt{2}\\)", "1", "2", "\\(\\dfrac{\\sqrt{2}}{2}\\)"],
+    correctIndex: 0  // "√2"
+  },
+  {
+    // #22
+    question: "\\(b=2,\\; c=\\sqrt{3},\\; A=30^{\\circ}\\)인 삼각형 \\(ABC\\)의 외접원의 반지름 \\(R\\)은 얼마인가?",
+    choices: ["1", "\\(\\dfrac{1}{2}\\)", "\\(\\sqrt{3}\\)", "2"],
+    correctIndex: 0  // "1"
+  },
+  {
+    // #23
+    question: "넓이가 18인 삼각형 \\(ABC\\)의 세 변의 길이 합이 18일 때, 내접원의 반지름 \\(r\\)의 길이는 얼마인가?",
+    choices: ["1", "2", "3", "6"],
+    correctIndex: 1  // "2"
+  },
+  {
+    // #24
+    question: "삼각형 \\(ABC\\)에서 \\(a=7,\\; b=5,\\; c=8\\), \\(\\angle A = \\dfrac{\\pi}{3}\\)일 때, 이 삼각형의 내접원의 반지름 \\(r\\)은 얼마인가?",
+    choices: ["1", "\\(\\sqrt{3}\\)", "\\(2\\sqrt{3}\\)", "\\(3\\sqrt{3}\\)"],
+    correctIndex: 1  // "√3"
+  },
+  {
+    // #25
+    question: "\\(BC=4,\\; CD=5,\\; A=150^{\\circ}\\)인 평행사변형 \\(ABCD\\)의 넓이를 구하세요.",
+    choices: ["8", "10", "12", "\\(5\\sqrt{3}\\)"],
+    correctIndex: 1  // "10"
+  },
+  {
+    // #26
+    question: "\\(AB=3,\\; AD=4,\\; B=135^{\\circ}\\)인 평행사변형 \\(ABCD\\)의 넓이를 구하세요.",
+    choices: ["5", "\\(4\\sqrt{2}\\)", "\\(6\\sqrt{2}\\)", "9"],
+    correctIndex: 2  // "6√2"
+  },
+  {
+    // #27
+    question: "\\(AB=2,\\; BC=3,\\; D=60^{\\circ}\\)인 평행사변형 \\(ABCD\\)의 넓이를 구하세요.",
+    choices: ["\\(2\\sqrt{3}\\)", "4", "5", "\\(3\\sqrt{3}\\)"],
+    correctIndex: 3  // "3√3"
+  },
+  {
+    // #28
+    question: "사각형 \\(ABCD\\)에서 두 대각선의 길이가 10, 14이고, 두 대각선이 이루는 각이 \\(120^{\\circ}\\)일 때, 사각형 \\(ABCD\\)의 넓이는 얼마인가?",
+    choices: ["\\(30\\sqrt{3}\\)", "\\(35\\sqrt{3}\\)", "\\(40\\sqrt{3}\\)", "\\(28\\sqrt{3}\\)"],
+    correctIndex: 1  // "35√3"
+  },
+  {
+    // #29
+    question: "두 대각선의 길이가 6, 8이고 두 대각선이 이루는 각 중 하나가 \\(60^{\\circ}\\)인 사각형의 넓이는 얼마인가?",
+    choices: ["\\(6\\sqrt{3}\\)", "\\(12\\sqrt{3}\\)", "\\(16\\sqrt{3}\\)", "\\(24\\sqrt{3}\\)"],
+    correctIndex: 1  // "12√3"
+  },
+  {
+    // #30
+    question: "세 변의 길이가 각각 5, 7, 8인 \\(\\triangle ABC\\)의 내접원의 반지름의 길이를 구하시오.",
+    choices: ["1", "\\(\\sqrt{3}\\)", "2", "\\(\\sqrt{2}\\)"],
+    correctIndex: 1  // "√3"
+  },
+  {
+    // #31
+    question: "삼각형 \\(ABC\\)의 세 변의 길이의 합이 20이고, 내접원의 반지름의 길이가 \\(\\sqrt{3}\\)일 때, 삼각형 \\(ABC\\)의 넓이를 구하시오.",
+    choices: ["\\(8\\sqrt{3}\\)", "\\(10\\sqrt{2}\\)", "\\(10\\sqrt{3}\\)", "\\(15\\sqrt{3}\\)"],
+    correctIndex: 2  // "10√3"
+  },
+  {
+    // #32
+    question: "\\(a=5,\\; b=6,\\; c=7\\)일 때, 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(5\\sqrt{6}\\)", "\\(6\\sqrt{6}\\)", "\\(7\\sqrt{6}\\)", "\\(8\\sqrt{2}\\)"],
+    correctIndex: 1  // "6√6"
+  },
+  {
+    // #33
+    question: "\\(a=6,\\; b=3,\\; c=5\\)일 때, 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(2\\sqrt{13}\\)", "\\(2\\sqrt{14}\\)", "\\(4\\sqrt{14}\\)", "\\(3\\sqrt{10}\\)"],
+    correctIndex: 1  // "2√14"
+  },
+  {
+    // #34
+    question: "\\(a=4,\\; b=6,\\; c=8\\)일 때, 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(2\\sqrt{15}\\)", "\\(3\\sqrt{10}\\)", "\\(3\\sqrt{15}\\)", "\\(4\\sqrt{15}\\)"],
+    correctIndex: 2  // "3√15"
+  },
+  {
+    // #35
+    question: "\\(b=2,\\; c=\\sqrt{6},\\; A=135^{\\circ}\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(\\sqrt{2}\\)", "\\(\\sqrt{3}\\)", "2", "\\(2\\sqrt{3}\\)"],
+    correctIndex: 1  // "√3"
+  },
+  {
+    // #36
+    question: "\\(a=6,\\; c=5,\\; B=120^{\\circ}\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(3\\sqrt{3}\\)", "\\(7.5\\sqrt{3}\\)", "\\(\\dfrac{15\\sqrt{3}}{2}\\)", "\\(8\\sqrt{3}\\)"],
+    correctIndex: 2  // "15√3/2"
+  },
+  {
+    // #37
+    question: "\\(a=4,\\; b=3,\\; C=45^{\\circ}\\)인 삼각형 \\(ABC\\)의 넓이 \\(S\\)는?",
+    choices: ["\\(2\\sqrt{2}\\)", "\\(3\\sqrt{2}\\)", "\\(4\\sqrt{2}\\)", "\\(6\\sqrt{2}\\)"],
+    correctIndex: 1  // "3√2"
+  }
+];
+
+// --------------------------------------------------------------------------------------
+// 전역 변수
+// --------------------------------------------------------------------------------------
+let shuffledQuestions = [];
+let currentQuestionIndex = 0;
+let score = 0;
+let misses = 0;
+let remainingLife = 3; 
+let totalTime = 0;    // 전체 게임 시간 (초)
+let intervalId = null; 
+let energyTimeoutId = null;
+let timeLimit = 0;
+let difficulty = "하"; // 기본값
+let currentEnergy = 100; // 에너지바 (0~100)
+let energyDrainInterval = null;
+let playerName = "";
+
+// 난이도 별 점수, 시간 제한
+const difficultyScoreMap = {
+  "최상": 20,
+  "상": 15,
+  "중": 13,
+  "하": 10
+};
+const difficultyTimeMap = {
+  "최상": 25,
+  "상": 35,
+  "중": 45,
+  "하": Infinity
+};
+
+// --------------------------------------------------------------------------------------
+// 초기 시작
+// --------------------------------------------------------------------------------------
+function startGame(diff) {
+  playerName = document.getElementById("playerName").value.trim();
+  if(!playerName) {
+    alert("이름을 입력해주세요!");
+    return;
+  }
+  difficulty = diff;
+  timeLimit = difficultyTimeMap[diff];
+  document.getElementById("start-screen").classList.add("hidden");
+  document.getElementById("quiz-screen").classList.remove("hidden");
+
+  // 문제 셔플
+  shuffledQuestions = shuffleArray([...allQuestions]);
+
+  // 초기화
+  currentQuestionIndex = 0;
+  score = 0;
+  misses = 0;
+  remainingLife = 3;
+  totalTime = 0;
+  currentEnergy = 100;
+
+  // 타이머
+  clearInterval(intervalId);
+  intervalId = setInterval(() => {
+    totalTime++;
+    document.getElementById("time-container").innerText = `전체 진행 시간: ${totalTime}초 경과`;
+  }, 1000);
+
+  // 첫 문제 표시
+  showQuestion();
+}
+
+// --------------------------------------------------------------------------------------
+// 문제 출력
+// --------------------------------------------------------------------------------------
+function showQuestion() {
+  if (currentQuestionIndex >= shuffledQuestions.length) {
+    endGame("모든 문제를 풀었습니다!");
+    return;
+  }
+  const questionObj = shuffledQuestions[currentQuestionIndex];
+
+  // 에너지바 셋업
+  currentEnergy = 100;
+  updateEnergyBar();
+
+  // 기존 타이머/에너지 제거
+  if (energyDrainInterval) clearInterval(energyDrainInterval);
+
+  // 시간제한이 없는 난이도(하)라면 에너지바 멈춤
+  if (timeLimit !== Infinity) {
+    energyDrainInterval = setInterval(() => {
+      currentEnergy -= 100 / timeLimit;
+      if (currentEnergy <= 0) {
+        currentEnergy = 0;
+        clearInterval(energyDrainInterval);
+        // 시간 종료 -> 기회 1 감소
+        handleTimeOver();
+      }
+      updateEnergyBar();
+    }, 1000);
+  } else {
+    // 하 난이도 => 에너지바를 항상 100%로 보여준다.
+    currentEnergy = 100;
+    updateEnergyBar();
+  }
+
+  // 문제와 보기 표시
+  const questionContainer = document.getElementById("question-container");
+  questionContainer.innerHTML = `
+    <div style="font-weight:bold; margin-bottom:10px;">
+      ${questionObj.question}
+    </div>
+  `;
+
+  // 보기 배열 섞기
+  const indices = [0,1,2,3];
+  shuffleArray(indices);
+  indices.forEach(idx => {
+    const choiceText = questionObj.choices[idx];
+    const div = document.createElement("div");
+    div.className = "answer-choice";
+    div.innerHTML = choiceText;
+    div.onclick = () => checkAnswer(idx);
+    questionContainer.appendChild(div);
+  });
+
+  document.getElementById("score-container").innerText = `점수: ${score}`;
+  document.getElementById("life-container").innerText = `남은 기회: ${remainingLife}`;
+
+  // 수식 렌더링
+  MathJax.typeset();
+}
+
+// --------------------------------------------------------------------------------------
+// 정답 체크
+// --------------------------------------------------------------------------------------
+function checkAnswer(selectedIndex) {
+  const q = shuffledQuestions[currentQuestionIndex];
+  const correctIndex = q.correctIndex;
+
+  if (selectedIndex === correctIndex) {
+    // 정답
+    score += difficultyScoreMap[difficulty];
+    alert("정답입니다!\n+ " + difficultyScoreMap[difficulty] + "점");
+  } else {
+    // 오답
+    misses++;
+    remainingLife--;
+    alert(`틀렸습니다! 정답은 "${q.choices[correctIndex]}" 입니다.`);
+    if (remainingLife <= 0) {
+      endGame("기회를 모두 소진하였습니다. 게임 오버!");
+      return;
+    }
+  }
+
+  currentQuestionIndex++;
+  showQuestion();
+}
+
+// --------------------------------------------------------------------------------------
+// 시간 초과
+// --------------------------------------------------------------------------------------
+function handleTimeOver() {
+  misses++;
+  remainingLife--;
+  alert("시간이 초과되었습니다! 기회가 1 감소합니다.");
+  if (remainingLife <= 0) {
+    endGame("기회를 모두 소진하였습니다. 게임 오버!");
+  } else {
+    currentQuestionIndex++;
+    showQuestion();
+  }
+}
+
+// --------------------------------------------------------------------------------------
+// 게임 종료
+// --------------------------------------------------------------------------------------
+function endGame(msg) {
+  clearInterval(intervalId);
+  if (energyDrainInterval) clearInterval(energyDrainInterval);
+  alert(`${msg}\n게임이 종료됩니다.\n최종 점수: ${score}`);
+}
+
+// --------------------------------------------------------------------------------------
+// 에너지바 업데이트
+// --------------------------------------------------------------------------------------
+function updateEnergyBar() {
+  const bar = document.getElementById("energy-bar");
+  bar.style.background = `linear-gradient(to right, #4caf50 ${currentEnergy}%, transparent 0%)`;
+}
+
+// --------------------------------------------------------------------------------------
+// 점수 전송
+// --------------------------------------------------------------------------------------
+function onSendScore() {
+  // 게임이름: "삼각형, 사각형의 넓이"
+  saveData("삼각형, 사각형의 넓이", playerName, score, totalTime);
+}
+
+// --------------------------------------------------------------------------------------
+// 배열 셔플
+// --------------------------------------------------------------------------------------
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const rand = Math.floor(Math.random() * (i + 1));
+    [array[i], array[rand]] = [array[rand], array[i]];
+  }
+  return array;
+}
+</script>
+</body>
+</html>
